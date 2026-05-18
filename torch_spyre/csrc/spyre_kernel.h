@@ -58,6 +58,8 @@ std::string get_init_path(const std::string& code_dir);
 
 std::string get_pagi_path(const std::string& code_dir);
 
+const std::string& getFlexCompute();
+
 KernelArtifacts& getOrLoadArtifacts(const std::string& code_dir,
                                     const SpyreStream& stream);
 void launchKernel(const std::string& code_dir,

@@ -18,6 +18,7 @@
 
 #include <c10/util/Exception.h>
 
+#include <algorithm>
 #include <filesystem>  // NOLINT(build/c++17)
 #include <fstream>
 #include <iostream>
@@ -132,6 +133,25 @@ std::string get_pagi_path(const std::string& code_dir) {
   return (dir / program_dir).string();
 }
 
+const std::string& getFlexCompute() {
+  static const std::string flex_compute = [] {
+    if (const char* env = std::getenv("FLEX_COMPUTE"); env != nullptr) {
+      std::string str(env);
+      std::ranges::transform(str, str.begin(),
+                             [](unsigned char c) { return std::tolower(c); });
+      return str;
+    }
+    return std::string();
+  }();
+  return flex_compute;
+}
+
+// Check if FLEX_COMPUTE is set to "senulator" (case-insensitive)
+static bool isSenulator() {
+  static const bool is_senulator = getFlexCompute() == "senulator";
+  return is_senulator;
+}
+
 // Cache: code_dir -> artifacts (loaded once)
 std::unordered_map<std::string, KernelArtifacts> g_artifact_cache;
 std::shared_mutex
@@ -178,9 +198,22 @@ KernelArtifacts& getOrLoadArtifacts(const std::string& code_dir,
   TORCH_CHECK(std::filesystem::exists(bundle_path),
               "Bundle not found: ", bundle_path);
 
-  // Read init.bin (hex-encoded program binary)
-  std::string init_path = get_init_path(code_dir) + "/init.txt";
-  arts.init_bin = readHexEncodedFile(init_path);
+  // Determine which binary file to read based on environment variables
+  std::string init_path = get_init_path(code_dir);
+  std::string binary_filename = "/init.txt";
+  if (isSenulator()) {
+    binary_filename = "/senprog.json";
+    // Read senprog.json as raw bytes
+    std::filesystem::path full_path = init_path + binary_filename;
+    size_t file_size = std::filesystem::file_size(full_path);
+    arts.init_bin.resize(file_size);
+    std::ifstream file(full_path, std::ios::binary);
+    file.read(reinterpret_cast<char*>(arts.init_bin.data()), file_size);
+  } else {
+    // Read init.bin (hex-encoded program binary)
+    std::string full_path = init_path + binary_filename;
+    arts.init_bin = readHexEncodedFile(full_path);
+  }
 
   arts.program_size = arts.init_bin.size();
   auto& allocator = SpyreAllocator::instance();
