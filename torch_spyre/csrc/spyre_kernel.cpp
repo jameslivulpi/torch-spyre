@@ -49,6 +49,17 @@ std::ostream& operator<<(std::ostream& os, const KernelArtifacts& k) {
   return os;
 }
 
+std::vector<uint8_t> readRawBinaryFile(const std::string& filepath) {
+  size_t file_size = std::filesystem::file_size(filepath);
+  std::vector<uint8_t> data(file_size);
+  std::ifstream file(filepath, std::ios::binary);
+  if (!file.is_open()) {
+    throw std::runtime_error("Failed to open file: " + filepath);
+  }
+  file.read(reinterpret_cast<char*>(data.data()), file_size);
+  return data;
+}
+
 std::vector<uint8_t> readHexEncodedFile(const std::string& filepath) {
   // Slurp entire file into memory in one I/O call
   std::ifstream inpFile(filepath, std::ios::in | std::ios::binary);
@@ -200,20 +211,14 @@ KernelArtifacts& getOrLoadArtifacts(const std::string& code_dir,
 
   // Determine which binary file to read based on environment variables
   std::string init_path = get_init_path(code_dir);
-  std::string binary_filename = "/init.txt";
-  if (isSenulator()) {
-    binary_filename = "/senprog.json";
-    // Read senprog.json as raw bytes
-    std::filesystem::path full_path = init_path + binary_filename;
-    size_t file_size = std::filesystem::file_size(full_path);
-    arts.init_bin.resize(file_size);
-    std::ifstream file(full_path, std::ios::binary);
-    file.read(reinterpret_cast<char*>(arts.init_bin.data()), file_size);
-  } else {
-    // Read init.bin (hex-encoded program binary)
-    std::string full_path = init_path + binary_filename;
-    arts.init_bin = readHexEncodedFile(full_path);
-  }
+  std::string binary_filename = isSenulator() ? "/senprog.json" : "/init.txt";
+  std::string full_path = init_path + binary_filename;
+
+  // Read the binary file using the appropriate method
+  arts.init_bin =
+      isSenulator()
+          ? readRawBinaryFile(full_path)    // Read senprog.json as raw bytes
+          : readHexEncodedFile(full_path);  // Read init.bin (hex-encoded)
 
   arts.program_size = arts.init_bin.size();
   auto& allocator = SpyreAllocator::instance();
